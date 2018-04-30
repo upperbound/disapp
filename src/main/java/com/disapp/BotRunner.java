@@ -4,34 +4,15 @@ import com.disapp.annotations.InitClass;
 import com.disapp.listeners.MessageHandler;
 import com.disapp.utils.ClientManager;
 import com.disapp.utils.Properties;
-import javafx.application.Application;
-import javafx.application.Platform;
-import javafx.collections.FXCollections;
-import javafx.geometry.Pos;
-import javafx.scene.Scene;
-import javafx.scene.control.ChoiceBox;
-import javafx.scene.control.TextArea;
-import javafx.scene.image.Image;
-import javafx.scene.input.KeyCode;
-import javafx.scene.input.KeyCodeCombination;
-import javafx.scene.input.KeyCombination;
-import javafx.scene.layout.GridPane;
-import javafx.stage.Stage;
-import javafx.util.Pair;
 import org.reflections.Reflections;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import sx.blah.discord.api.IDiscordClient;
-import sx.blah.discord.handle.obj.Permissions;
 import sx.blah.discord.util.DiscordException;
-
-import java.awt.GraphicsDevice;
-import java.awt.GraphicsEnvironment;
 import java.io.*;
 import java.util.*;
-import java.util.List;
 
-public class BotRunner extends Application {
+public class BotRunner {
     private static final Logger logger;
 
     private static final IDiscordClient client;
@@ -48,13 +29,16 @@ public class BotRunner extends Application {
             logger.error(e.getMessage(), e);
             throw new RuntimeException(e);
         }
-        client = ClientManager.getClient(properties.getProperty("TOKEN"), false);
+        String token = System.getenv("TOKEN") != null
+                ? System.getenv("TOKEN")
+                :properties.getProperty("TOKEN");
+        logger.info("#########TOKEN#########=<" + token + ">");
+        client = ClientManager.getClient(token, false);
     }
 
     public static void main(String args[]) {
         initialize();
         if (client == null) {
-            Platform.exit();
             return;
         }
         else if (!client.isLoggedIn())
@@ -63,7 +47,6 @@ public class BotRunner extends Application {
             }
             catch (DiscordException e) {
                 logger.error(e.getErrorMessage(), e);
-                Platform.exit();
                 return;
             }
         int sleepSeconds = 0;
@@ -84,12 +67,7 @@ public class BotRunner extends Application {
                         (int) client.getChannels().stream().mapToLong(channel -> channel.getUsersHere().stream().filter(user -> !user.isBot()).count()).sum())
         );
 
-        if (args.length == 1 && args[0].equals("-console")) {
-            Platform.exit();
-            consoleMode();
-        }
-        else
-            launch(args);
+        consoleMode();
     }
 
     private static void consoleMode() {
@@ -118,75 +96,75 @@ public class BotRunner extends Application {
         }
     }
 
-    @Override
-    public void start(Stage primaryStage) throws Exception {
-        assert client != null;
-
-        GraphicsDevice gd = GraphicsEnvironment.getLocalGraphicsEnvironment().getDefaultScreenDevice();
-        GridPane grid = new GridPane();
-        Scene scene = new Scene(grid, gd.getDisplayMode().getWidth()/3, gd.getDisplayMode().getHeight()/3);
-        primaryStage.setTitle(com.disapp.utils.Properties.getProperty("gui.title"));
-        Image icon = getIcon(Properties.getProperty("gui.title.icon"));
-        if (icon != null)
-            primaryStage.getIcons().add(icon);
-        primaryStage.setScene(scene);
-        grid.setAlignment(Pos.CENTER);
-        grid.setHgap(20);
-        grid.setVgap(20);
-
-        final List<Pair<String, Long>> ch = new ArrayList<>();
-        client.getChannels().stream().filter(
-                channel -> channel.getModifiedPermissions(client.getOurUser()).contains(Permissions.SEND_MESSAGES)
-        ).forEach(channel -> ch.add(new Pair<>(channel.getGuild().getName() + "@" + channel.getName(), channel.getLongID())));
-        ChoiceBox<Pair<String, Long>> channels = new ChoiceBox<>(FXCollections.observableList(ch));
-        channels.getSelectionModel().select(0);
-        grid.add(channels, 1, 0);
-
-        TextArea area = new TextArea();
-        grid.add(area, 0, 1, 2, 4);
-        final KeyCombination enter = new KeyCodeCombination(KeyCode.ENTER);
-        final KeyCodeCombination shiftEnter = new KeyCodeCombination(KeyCode.ENTER, KeyCombination.SHIFT_DOWN);
-        area.getScene().getAccelerators().put(
-                shiftEnter,
-                () -> {
-                    area.setText(area.getText() + "\n");
-                    area.end();
-                });
-        area.setOnKeyReleased(event -> {
-            if (enter.match(event)) {
-                client.getChannels().stream().filter(
-                        c -> c.getLongID() == channels.getSelectionModel().getSelectedItem().getValue()
-                ).forEach(c -> {
-                    String text = area.getText();
-                    if (!text.isEmpty())
-                        c.sendMessage(text);
-                    area.clear();
-                });
-            }
-        });
-        primaryStage.show();
-    }
-
-    private static Image getIcon(String name) {
-        File file = new File(Properties.FileSystem.ICONS_DIRECTORY + Properties.FileSystem.DEFAULT_SEPARATOR + name);
-        if (file.exists() && file.isFile()) {
-            try {
-                return new Image(new FileInputStream(file));
-            } catch (FileNotFoundException e) {
-                logger.error(e.getMessage(), e);
-                return null;
-            }
-        }
-        else {
-            InputStream stream = BotRunner.class.getResourceAsStream(name);
-            if (stream != null)
-                return new Image(stream);
-        }
-        return null;
-    }
-
-    public void stop() throws Exception {
-        logout();
-        super.stop();
-    }
+//    @Override
+//    public void start(Stage primaryStage) throws Exception {
+//        assert client != null;
+//
+//        GraphicsDevice gd = GraphicsEnvironment.getLocalGraphicsEnvironment().getDefaultScreenDevice();
+//        GridPane grid = new GridPane();
+//        Scene scene = new Scene(grid, gd.getDisplayMode().getWidth()/3, gd.getDisplayMode().getHeight()/3);
+//        primaryStage.setTitle(com.disapp.utils.Properties.getProperty("gui.title"));
+//        Image icon = getIcon(Properties.getProperty("gui.title.icon"));
+//        if (icon != null)
+//            primaryStage.getIcons().add(icon);
+//        primaryStage.setScene(scene);
+//        grid.setAlignment(Pos.CENTER);
+//        grid.setHgap(20);
+//        grid.setVgap(20);
+//
+//        final List<Pair<String, Long>> ch = new ArrayList<>();
+//        client.getChannels().stream().filter(
+//                channel -> channel.getModifiedPermissions(client.getOurUser()).contains(Permissions.SEND_MESSAGES)
+//        ).forEach(channel -> ch.add(new Pair<>(channel.getGuild().getName() + "@" + channel.getName(), channel.getLongID())));
+//        ChoiceBox<Pair<String, Long>> channels = new ChoiceBox<>(FXCollections.observableList(ch));
+//        channels.getSelectionModel().select(0);
+//        grid.add(channels, 1, 0);
+//
+//        TextArea area = new TextArea();
+//        grid.add(area, 0, 1, 2, 4);
+//        final KeyCombination enter = new KeyCodeCombination(KeyCode.ENTER);
+//        final KeyCodeCombination shiftEnter = new KeyCodeCombination(KeyCode.ENTER, KeyCombination.SHIFT_DOWN);
+//        area.getScene().getAccelerators().put(
+//                shiftEnter,
+//                () -> {
+//                    area.setText(area.getText() + "\n");
+//                    area.end();
+//                });
+//        area.setOnKeyReleased(event -> {
+//            if (enter.match(event)) {
+//                client.getChannels().stream().filter(
+//                        c -> c.getLongID() == channels.getSelectionModel().getSelectedItem().getValue()
+//                ).forEach(c -> {
+//                    String text = area.getText();
+//                    if (!text.isEmpty())
+//                        c.sendMessage(text);
+//                    area.clear();
+//                });
+//            }
+//        });
+//        primaryStage.show();
+//    }
+//
+//    private static Image getIcon(String name) {
+//        File file = new File(Properties.FileSystem.ICONS_DIRECTORY + Properties.FileSystem.DEFAULT_SEPARATOR + name);
+//        if (file.exists() && file.isFile()) {
+//            try {
+//                return new Image(new FileInputStream(file));
+//            } catch (FileNotFoundException e) {
+//                logger.error(e.getMessage(), e);
+//                return null;
+//            }
+//        }
+//        else {
+//            InputStream stream = BotRunner.class.getResourceAsStream(name);
+//            if (stream != null)
+//                return new Image(stream);
+//        }
+//        return null;
+//    }
+//
+//    public void stop() throws Exception {
+//        logout();
+//        super.stop();
+//    }
 }
