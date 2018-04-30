@@ -1,4 +1,6 @@
-package com.disapp;
+package com.disapp.annotations;
+
+import com.disapp.BotRunner;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;

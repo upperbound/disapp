@@ -1,12 +1,13 @@
 package com.disapp.utils;
 
-import com.disapp.InitClass;
+import com.disapp.annotations.InitClass;
 import com.disapp.containers.LineContainer;
 import javafx.util.Pair;
-import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigDecimal;
@@ -33,17 +34,17 @@ public class MessageUtils {
 
     static {
         int escCount = 0;
-        for (Object key : Properties.getProperties().keySet()) {
+        for (Object key : Properties.Files.regexp.keySet()) {
             String sk = (String) key;
             if (sk.startsWith("esc."))
                 escCount ++;
         }
         ESCAPING_CHARACTERS = new char[escCount];
         escCount = 0;
-        for (Object key : Properties.getProperties().keySet()) {
+        for (Object key : Properties.Files.regexp.keySet()) {
             String sk = (String) key;
             if (sk.startsWith("esc."))
-                ESCAPING_CHARACTERS[escCount++] = Properties.getString(sk).charAt(0);
+                ESCAPING_CHARACTERS[escCount++] = Properties.getRegexp(sk).charAt(0);
         }
     }
 
@@ -54,57 +55,61 @@ public class MessageUtils {
         private static final ConcurrentSkipListMap<String, String> emoji;
 
         static {
+            Properties.init();
             phrases = new ConcurrentSkipListMap<>();
             emoji = new ConcurrentSkipListMap<>();
-            Properties.getProperties().keySet().forEach(key -> {
+            Properties.Files.emoji.keySet().forEach(key -> {
+                String sk = (String) key;
+                emoji.put(
+                        sk.substring(sk.indexOf(".") + 1).toUpperCase(),
+                        Properties.getEmoji(sk)
+                );
+            });
+            Properties.Files.phrases.keySet().forEach(key -> {
                 String sk = (String) key;
                 if (sk.startsWith("file.")) {
+                    File file = new File(Properties.FileSystem.SETTINGS_DIRECTORY + Properties.FileSystem.DEFAULT_SEPARATOR + Properties.getPhrase(sk));
                     try {
-                        InputStream stream = MessageUtils.class.getResourceAsStream(Properties.getString(sk));
+                        InputStream stream;
+                        if(file.exists() && file.isFile())
+                            stream = new FileInputStream(file);
+                        else
+                            stream = MessageUtils.class.getResourceAsStream(Properties.getPhrase(sk));
                         byte[] buffer = new byte[stream.available()];
                         int read = stream.read(buffer);
                         if (read > 0) {
                             String[] buf = new String(buffer).split(System.getProperty("line.separator"));
                             String name = sk.substring(sk.indexOf(".") + 1).toUpperCase();
-                            char[] zeroes = new char[String.valueOf(buf.length).length()];
                             for (int i = 0; i < buf.length - 1; i++) {
                                 List<LineContainer> put = new CopyOnWriteArrayList<>();
-                                put.add(new LineContainer(buf[i]));
+                                String putValue = buf[i + 1].trim(), putLine = buf[i].trim();
+                                if (putValue.isEmpty() && putLine.isEmpty())
+                                    continue;
+                                put.add(new LineContainer(putLine));
                                 phrases.put(
-                                        name + StringUtils.repeat(
-                                                "0",
-                                                String.valueOf(buf.length).length() - String.valueOf(i).length()
-                                        ) + i,
-                                        new Pair<>(buf[i + 1], put)
+                                        name +
+                                                IntStream.range(0, String.valueOf(buf.length).length() - String.valueOf(i).length())
+                                                        .mapToObj(z -> "0").collect(Collectors.joining()) +
+                                                i,
+                                        new Pair<>(putValue, put)
                                 );
                             }
-                            List<LineContainer> put = new CopyOnWriteArrayList<>();
-                            put.add(new LineContainer(buf[buf.length - 1]));
-                            phrases.put(
-                                    name + (buf.length - 1),
-                                    new Pair<>(Properties.getString("default.phrase"), put)
-                            );
                         }
                     } catch (IOException e) {
                         MessageUtils.logger.error(e.getMessage(), e);
                     }
                 }
-                else if (sk.startsWith("emoji."))
-                    emoji.put(
-                            sk.substring(sk.indexOf(".") + 1).toUpperCase(),
-                            Properties.getString(sk)
-                    );
                 else if (sk.startsWith("phrase.") && !sk.matches(".*\\.map_\\d+$"))
                     phrases.put(
                             sk.substring(sk.indexOf(".") + 1).toUpperCase(),
-                            new Pair<>(Properties.getString(sk), new CopyOnWriteArrayList<>())
+                            new Pair<>(Properties.getPhrase(sk), new CopyOnWriteArrayList<>())
                     );
             });
-            Properties.getProperties().keySet().forEach(key -> {
+            Properties.Files.phrases.keySet().forEach(key -> {
                 String sk = (String) key;
                 if (sk.matches("^phrase\\.\\w+\\.map_\\d+$")) {
                     String name = sk.substring(sk.indexOf(".") + 1);
-                    phrases.get(name.substring(0, name.indexOf(".")).toUpperCase()).getValue().add(new LineContainer(Properties.getString(sk)));
+                    phrases.get(name.substring(0, name.indexOf(".")).toUpperCase()).getValue().add(new LineContainer(Properties.getPhrase(sk)));
                 }
             });
         }
@@ -182,40 +187,41 @@ public class MessageUtils {
         }
 
         private static boolean matchRoughly(LineContainer container, Map<String, Integer> patternWords) {
-            for (String word : patternWords.keySet()) {
-                Integer i = container.getWordsFormattedByCount().get(word);
-                if (i == null || i < patternWords.get(word))
-                    return false;
-            }
-            return true;
+            return patternWords.keySet().stream().allMatch(word -> {
+                Integer words = container.getWordsByCount().get(word);
+                Integer wordsFormatted = container.getWordsFormattedByCount().get(word);
+                Integer wordsPattern = patternWords.get(word);
+                return (words != null && words >= wordsPattern) || (wordsFormatted != null && wordsFormatted >= wordsPattern);
+            });
         }
     }
 
     @InitClass
     public static class Patterns {
-        public static final String ONLY_NUMBERS = Properties.getString("pattern.only_numbers");
-        public static final String RUSSIAN_WORDS = Properties.getString("pattern.russian_words");
-        public static final String WHITESPACE_AND_PUNCTUATION = Properties.getString("pattern.whitespace_and_punctuation");
+        public static final String ONLY_NUMBERS = Properties.getRegexp("pattern.only_numbers");
+        public static final String RUSSIAN_WORDS = Properties.getRegexp("pattern.russian_words");
+        public static final String WHITESPACE_AND_PUNCTUATION = Properties.getRegexp("pattern.whitespace_and_punctuation");
+        public static final String USER_NAME = "@USER_NAME";
 
         public static final String[] ENDINGS;
 
         public enum SEQUENCE_POLICY {EXACTLY, AT_LEAST, NOT_MORE}
-        private static final String SEQUENCE_OF_SYMBOLS = Properties.getString("pattern.sequence_of_symbols");
-        private static final String SEQUENCE_OF_LETTERS = Properties.getString("pattern.sequence_of_letters");
+        private static final String SEQUENCE_OF_SYMBOLS = Properties.getRegexp("pattern.sequence_of_symbols");
+        private static final String SEQUENCE_OF_LETTERS = Properties.getRegexp("pattern.sequence_of_letters");
 
         static {
             int endingsCount = 0;
-            for (Object key : Properties.getProperties().keySet()) {
+            for (Object key : Properties.Files.regexp.keySet()) {
                 String sk = (String) key;
                 if (sk.startsWith("pattern.endings."))
                     endingsCount ++;
             }
             ENDINGS = new String[endingsCount];
             endingsCount = 0;
-            for (Object key : Properties.getProperties().keySet()) {
+            for (Object key : Properties.Files.regexp.keySet()) {
                 String sk = (String) key;
                 if (sk.startsWith("pattern.endings."))
-                    ENDINGS[endingsCount++] = Properties.getString(sk);
+                    ENDINGS[endingsCount++] = Properties.getRegexp(sk);
             }
         }
 

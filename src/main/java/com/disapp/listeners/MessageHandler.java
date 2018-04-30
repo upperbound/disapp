@@ -21,9 +21,19 @@ import static com.disapp.utils.MessageUtils.Container;
 public class MessageHandler {
     private static final Logger logger = LoggerFactory.getLogger(MessageHandler.class);
 
-    private static final String PREFIX = Properties.getString("bot.prefix");
+    private static final String PREFIX;
+
+    private static final String PREFIX_TTS;
 
     private static final int DEFAULT_USERS_COUNT = 42;
+
+    static {
+        String pref = Properties.getProperty("bot.prefix.no_tts");
+        PREFIX = pref == null ? "/bot" : pref;
+
+        pref = Properties.getProperty("bot.prefix.tts");
+        PREFIX_TTS = pref == null ? "/BOT" : pref;
+    }
 
     private final IUser ourUser;
 
@@ -56,7 +66,11 @@ public class MessageHandler {
         IUser author = event.getAuthor();
         IChannel channel = event.getChannel();
         IMessage message = event.getMessage();
-        boolean startMention = message.getContent().startsWith(PREFIX) || message.getContent().startsWith(ourUser.mention(false));
+        boolean tts = message.getContent().trim().startsWith(PREFIX_TTS);
+        boolean startMention =
+                message.getContent().trim().startsWith(PREFIX) ||
+                        message.getContent().trim().startsWith(PREFIX_TTS) ||
+                        message.getContent().trim().startsWith(ourUser.mention(false));
         if (author.isBot() ||
                 (!startMention && !(!message.getMentions().isEmpty() && message.getMentions().contains(ourUser))) ||
                 message.mentionsEveryone() ||
@@ -97,10 +111,10 @@ public class MessageHandler {
                 Container.findReplyName(content);
         if (replyName != null) {
             history.pushMessage(message, replyName);
-            channel.sendMessage(Container.getPhrase(replyName));
+            channel.sendMessage(Container.getPhrase(replyName).replace(MessageUtils.Patterns.USER_NAME, author.mention()), tts);
             return;
         }
         history.pushMessage(message);
-        channel.sendMessage(Properties.getString("default.phrase"));
+        channel.sendMessage(Properties.getPhrase("default.phrase"));
     }
 }

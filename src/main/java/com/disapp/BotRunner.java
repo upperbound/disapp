@@ -1,15 +1,20 @@
 package com.disapp;
 
+import com.disapp.annotations.InitClass;
 import com.disapp.listeners.MessageHandler;
 import com.disapp.utils.ClientManager;
 import com.disapp.utils.Properties;
 import javafx.application.Application;
+import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
-import javafx.scene.control.Button;
 import javafx.scene.control.ChoiceBox;
+import javafx.scene.control.TextArea;
 import javafx.scene.image.Image;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyCodeCombination;
+import javafx.scene.input.KeyCombination;
 import javafx.scene.layout.GridPane;
 import javafx.stage.Stage;
 import javafx.util.Pair;
@@ -22,43 +27,43 @@ import sx.blah.discord.util.DiscordException;
 
 import java.awt.GraphicsDevice;
 import java.awt.GraphicsEnvironment;
-import java.io.IOException;
-import java.io.InputStream;
+import java.io.*;
 import java.util.*;
-
-import static com.disapp.utils.MessageUtils.Container;
+import java.util.List;
 
 public class BotRunner extends Application {
-    private static final String TOKEN;
-
-    private static final Logger logger = LoggerFactory.getLogger(BotRunner.class);
+    private static final Logger logger;
 
     private static final IDiscordClient client;
 
     static {
+        logger = LoggerFactory.getLogger(BotRunner.class);
         java.util.Properties properties = new java.util.Properties();
         String file = "token.properties";
         try {
             logger.info(file + " is loading from classpath");
-            properties.load(com.disapp.utils.Properties.class.getClassLoader().getResourceAsStream(file));
+            properties.load(new InputStreamReader(Properties.class.getClassLoader().getResourceAsStream(file)));
             logger.info(file + " loaded");
         } catch (IOException e) {
             logger.error(e.getMessage(), e);
             throw new RuntimeException(e);
         }
-        TOKEN = properties.getProperty("TOKEN");
-        client = ClientManager.getClient(TOKEN, com.disapp.utils.Properties.getBoolean("bot.login"));
+        client = ClientManager.getClient(properties.getProperty("TOKEN"), false);
     }
 
     public static void main(String args[]) {
         initialize();
-        if (client == null) return;
+        if (client == null) {
+            Platform.exit();
+            return;
+        }
         else if (!client.isLoggedIn())
             try {
                 client.login();
             }
             catch (DiscordException e) {
                 logger.error(e.getErrorMessage(), e);
+                Platform.exit();
                 return;
             }
         int sleepSeconds = 0;
@@ -79,8 +84,10 @@ public class BotRunner extends Application {
                         (int) client.getChannels().stream().mapToLong(channel -> channel.getUsersHere().stream().filter(user -> !user.isBot()).count()).sum())
         );
 
-        if (args.length == 1 && args[0].equals("-console"))
+        if (args.length == 1 && args[0].equals("-console")) {
+            Platform.exit();
             consoleMode();
+        }
         else
             launch(args);
     }
@@ -88,7 +95,7 @@ public class BotRunner extends Application {
     private static void consoleMode() {
         Scanner scanner = new Scanner(System.in);
         while (true) {
-            if (scanner.next().equals("lg")) {
+            if (scanner.next().equals("logout")) {
                 logout();
                 return;
             }
@@ -118,14 +125,15 @@ public class BotRunner extends Application {
         GraphicsDevice gd = GraphicsEnvironment.getLocalGraphicsEnvironment().getDefaultScreenDevice();
         GridPane grid = new GridPane();
         Scene scene = new Scene(grid, gd.getDisplayMode().getWidth()/3, gd.getDisplayMode().getHeight()/3);
-        primaryStage.setTitle(com.disapp.utils.Properties.getString("gui.title"));
-        InputStream icon = BotRunner.class.getResourceAsStream(Properties.getString("gui.title.icon"));
+        primaryStage.setTitle(com.disapp.utils.Properties.getProperty("gui.title"));
+        Image icon = getIcon(Properties.getProperty("gui.title.icon"));
         if (icon != null)
-            primaryStage.getIcons().add(new Image(icon));
+            primaryStage.getIcons().add(icon);
         primaryStage.setScene(scene);
         grid.setAlignment(Pos.CENTER);
-        grid.setHgap(15);
-        grid.setVgap(15);
+        grid.setHgap(20);
+        grid.setVgap(20);
+
         final List<Pair<String, Long>> ch = new ArrayList<>();
         client.getChannels().stream().filter(
                 channel -> channel.getModifiedPermissions(client.getOurUser()).contains(Permissions.SEND_MESSAGES)
@@ -133,14 +141,48 @@ public class BotRunner extends Application {
         ChoiceBox<Pair<String, Long>> channels = new ChoiceBox<>(FXCollections.observableList(ch));
         channels.getSelectionModel().select(0);
         grid.add(channels, 1, 0);
-        Button crap = new Button(Properties.getString("gui.button.crap_into_channel"));
-        crap.setOnAction(event -> {
-            client.getChannels().stream().filter(
-                    c -> c.getLongID() == channels.getSelectionModel().getSelectedItem().getValue()
-            ).forEach(c -> c.sendMessage(Container.getPhrase("crap")));
+
+        TextArea area = new TextArea();
+        grid.add(area, 0, 1, 2, 4);
+        final KeyCombination enter = new KeyCodeCombination(KeyCode.ENTER);
+        final KeyCodeCombination shiftEnter = new KeyCodeCombination(KeyCode.ENTER, KeyCombination.SHIFT_DOWN);
+        area.getScene().getAccelerators().put(
+                shiftEnter,
+                () -> {
+                    area.setText(area.getText() + "\n");
+                    area.end();
+                });
+        area.setOnKeyReleased(event -> {
+            if (enter.match(event)) {
+                client.getChannels().stream().filter(
+                        c -> c.getLongID() == channels.getSelectionModel().getSelectedItem().getValue()
+                ).forEach(c -> {
+                    String text = area.getText();
+                    if (!text.isEmpty())
+                        c.sendMessage(text);
+                    area.clear();
+                });
+            }
         });
-        grid.add(crap, 0, 0);
         primaryStage.show();
+    }
+
+    private static Image getIcon(String name) {
+        File file = new File(Properties.FileSystem.ICONS_DIRECTORY + Properties.FileSystem.DEFAULT_SEPARATOR + name);
+        if (file.exists() && file.isFile()) {
+            try {
+                return new Image(new FileInputStream(file));
+            } catch (FileNotFoundException e) {
+                logger.error(e.getMessage(), e);
+                return null;
+            }
+        }
+        else {
+            InputStream stream = BotRunner.class.getResourceAsStream(name);
+            if (stream != null)
+                return new Image(stream);
+        }
+        return null;
     }
 
     public void stop() throws Exception {
